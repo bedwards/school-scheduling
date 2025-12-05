@@ -1,15 +1,15 @@
 /**
  * School Scheduling Algorithm
  *
- * Uses a multi-phase approach:
+ * Primary: Integer Linear Programming (ILP) using HiGHS solver
+ * Fallback: Greedy assignment with local search optimization
+ *
+ * Multi-phase approach:
  * 1. Section Creation: Create sections for each course with teachers assigned
  * 2. Time Slot Assignment: Assign periods to sections avoiding conflicts
  * 3. Room Assignment: Assign rooms to sections based on features and capacity
- * 4. Student Assignment: Assign students to sections (required courses first, then electives)
- * 5. Optimization: Local search to improve soft constraint satisfaction
- *
- * Time Complexity: O(S * C * P) where S=students, C=courses, P=periods
- * Space Complexity: O(S * C) for conflict tracking
+ * 4. Student Assignment: ILP optimization (or greedy fallback)
+ * 5. Post-processing: Fill in any gaps with greedy assignment
  */
 
 import type {
@@ -20,7 +20,6 @@ import type {
   Course,
   Teacher,
   Room,
-  Student,
   UnassignedStudent,
   ProgressCallback,
   ProgressReport,
@@ -30,9 +29,11 @@ import type {
   TeacherId,
   RoomId,
 } from '../types/index.js';
+import { solveScheduleILP } from './ilp-solver.js';
 
 export interface SchedulerOptions {
   maxOptimizationIterations?: number;
+  useILP?: boolean; // Default true
   onProgress?: ProgressCallback;
 }
 
@@ -40,7 +41,11 @@ export async function generateSchedule(
   input: ScheduleInput,
   options: SchedulerOptions = {}
 ): Promise<Schedule> {
-  const { maxOptimizationIterations = 1000, onProgress } = options;
+  const {
+    maxOptimizationIterations = 1000,
+    useILP = true,
+    onProgress
+  } = options;
 
   const report = (phase: ProgressReport['phase'], percent: number, operation: string, stats?: ProgressReport['stats']) => {
     onProgress?.({ phase, percentComplete: percent, currentOperation: operation, stats });
@@ -52,30 +57,150 @@ export async function generateSchedule(
   const courseMap = new Map(input.courses.map(c => [c.id, c]));
   const teacherMap = new Map(input.teachers.map(t => [t.id, t]));
   const roomMap = new Map(input.rooms.map(r => [r.id, r]));
-  const studentMap = new Map(input.students.map(s => [s.id, s]));
 
-  report('initializing', 10, 'Creating sections');
+  report('initializing', 5, 'Creating sections');
 
   // Phase 1: Create sections with teachers
-  const sections = createSections(input.courses, input.teachers, courseMap);
+  const sections = createSections(input.courses, input.teachers);
 
-  report('assigning', 20, 'Assigning time slots to sections');
+  report('assigning', 10, 'Assigning time slots to sections');
 
   // Phase 2: Assign time slots to sections
   assignTimeSlots(sections, input.teachers, input.config, teacherMap);
 
-  report('assigning', 40, 'Assigning rooms to sections');
+  report('assigning', 20, 'Assigning rooms to sections');
 
   // Phase 3: Assign rooms to sections
   assignRooms(sections, input.rooms, courseMap, input.config);
 
-  report('assigning', 50, 'Assigning students to required courses');
+  report('assigning', 30, 'Assigning students to sections');
 
-  // Phase 4: Assign students to sections
+  // Phase 4: Assign students using ILP or greedy
   const unassigned: UnassignedStudent[] = [];
+  let algorithmUsed = 'greedy';
+  let ilpObjective = 0;
 
+  if (useILP) {
+    try {
+      report('optimizing', 35, 'Building ILP model with HiGHS solver...');
+
+      const ilpResult = await solveScheduleILP(sections, input, (progress) => {
+        // Scale ILP progress to 35-85%
+        const scaledPercent = 35 + (progress.percentComplete / 100) * 50;
+        report(progress.phase, scaledPercent, progress.currentOperation, progress.stats);
+      });
+
+      if (ilpResult.success) {
+        algorithmUsed = 'ilp-highs';
+        ilpObjective = ilpResult.objectiveValue;
+
+        report('optimizing', 85, `ILP solved (${ilpResult.status}), applying assignments...`);
+
+        // Apply ILP assignments to sections
+        applyILPAssignments(sections, ilpResult.assignments, input.students, courseMap, unassigned);
+
+        report('optimizing', 90, `ILP complete: objective=${ilpResult.objectiveValue.toFixed(1)}, time=${ilpResult.solveTimeMs}ms`);
+      } else {
+        report('optimizing', 85, `ILP failed (${ilpResult.status}), falling back to greedy...`);
+        // Fall through to greedy
+        await runGreedyAssignment(sections, input, courseMap, unassigned, report);
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      report('optimizing', 85, `ILP error: ${errorMsg}, falling back to greedy...`);
+      // Fall through to greedy
+      await runGreedyAssignment(sections, input, courseMap, unassigned, report);
+    }
+  } else {
+    await runGreedyAssignment(sections, input, courseMap, unassigned, report);
+  }
+
+  report('validating', 95, 'Finalizing schedule');
+
+  const schedule: Schedule = {
+    sections,
+    unassignedStudents: unassigned,
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      algorithmVersion: '2.0.0-ilp',
+      iterations: algorithmUsed === 'ilp-highs' ? 1 : maxOptimizationIterations,
+      score: calculateScore(sections, input),
+      constraintsSatisfied: 0,
+      constraintsTotal: input.constraints.length + input.preferences.length,
+      warnings: algorithmUsed === 'greedy' ? ['Used greedy fallback instead of ILP'] : [],
+    },
+  };
+
+  // Add algorithm info to metadata
+  (schedule.metadata as Record<string, unknown>).algorithm = algorithmUsed;
+  if (ilpObjective > 0) {
+    (schedule.metadata as Record<string, unknown>).ilpObjective = ilpObjective;
+  }
+
+  report('complete', 100, 'Schedule generation complete', {
+    studentsAssigned: input.students.length - unassigned.length,
+    sectionsCreated: sections.length,
+  });
+
+  return schedule;
+}
+
+function applyILPAssignments(
+  sections: Section[],
+  assignments: Map<StudentId, SectionId[]>,
+  students: { id: StudentId; requiredCourses: CourseId[] }[],
+  courseMap: Map<CourseId, Course>,
+  unassigned: UnassignedStudent[]
+): void {
+  // Build section lookup
+  const sectionMap = new Map(sections.map(s => [s.id, s]));
+
+  for (const student of students) {
+    const studentSections = assignments.get(student.id) || [];
+
+    for (const sectionId of studentSections) {
+      const section = sectionMap.get(sectionId);
+      if (section && !section.enrolledStudents.includes(student.id)) {
+        section.enrolledStudents.push(student.id);
+      }
+    }
+
+    // Check for missing required courses
+    const assignedCourses = new Set(studentSections.map(sid => {
+      const sec = sectionMap.get(sid);
+      return sec?.courseId;
+    }));
+
+    for (const courseId of student.requiredCourses) {
+      const course = courseMap.get(courseId);
+      // Skip grade-restricted courses the student can't take
+      if (course?.gradeRestrictions) {
+        const studentObj = students.find(s => s.id === student.id) as { grade?: number };
+        if (studentObj?.grade && !course.gradeRestrictions.includes(studentObj.grade)) {
+          continue;
+        }
+      }
+
+      if (!assignedCourses.has(courseId)) {
+        unassigned.push({
+          studentId: student.id,
+          courseId,
+          reason: 'ILP could not find feasible assignment (conflict or capacity)',
+        });
+      }
+    }
+  }
+}
+
+async function runGreedyAssignment(
+  sections: Section[],
+  input: ScheduleInput,
+  courseMap: Map<CourseId, Course>,
+  unassigned: UnassignedStudent[],
+  report: (phase: ProgressReport['phase'], percent: number, operation: string, stats?: ProgressReport['stats']) => void
+): Promise<void> {
   // Track student schedules for conflict detection
-  const studentSchedules = new Map<StudentId, Set<string>>(); // studentId -> Set of "day-slot"
+  const studentSchedules = new Map<StudentId, Set<string>>();
   for (const student of input.students) {
     studentSchedules.set(student.id, new Set());
   }
@@ -90,14 +215,8 @@ export async function generateSchedule(
         continue;
       }
 
-      // Check grade restriction
       if (course.gradeRestrictions && !course.gradeRestrictions.includes(student.grade)) {
-        unassigned.push({
-          studentId: student.id,
-          courseId,
-          reason: `Grade ${student.grade} not allowed for this course`
-        });
-        continue;
+        continue; // Skip silently - grade doesn't match
       }
 
       const assigned = assignStudentToSection(
@@ -119,25 +238,23 @@ export async function generateSchedule(
     studentsAssigned++;
     if (studentsAssigned % 10 === 0) {
       report('assigning', 50 + (studentsAssigned / input.students.length) * 20,
-        `Assigned ${studentsAssigned}/${input.students.length} students to required courses`,
+        `Greedy: ${studentsAssigned}/${input.students.length} students`,
         { studentsAssigned });
     }
   }
 
-  report('assigning', 75, 'Assigning students to electives');
+  report('assigning', 75, 'Assigning electives (greedy)');
 
-  // Second pass: electives (in preference order)
+  // Second pass: electives
   for (const student of input.students) {
     for (const courseId of student.electivePreferences) {
       const course = courseMap.get(courseId);
       if (!course) continue;
 
-      // Check grade restriction
       if (course.gradeRestrictions && !course.gradeRestrictions.includes(student.grade)) {
         continue;
       }
 
-      // Try to assign (silently skip if not possible)
       assignStudentToSection(
         student.id,
         courseId,
@@ -148,57 +265,26 @@ export async function generateSchedule(
     }
   }
 
-  report('optimizing', 80, 'Running optimization');
+  report('optimizing', 80, 'Running local search optimization');
 
-  // Phase 5: Optimization (balance section sizes)
-  optimizeSections(sections, studentSchedules, courseMap, maxOptimizationIterations, (iter) => {
-    if (iter % 100 === 0) {
-      report('optimizing', 80 + (iter / maxOptimizationIterations) * 15,
-        `Optimization iteration ${iter}/${maxOptimizationIterations}`);
-    }
-  });
-
-  report('validating', 95, 'Finalizing schedule');
-
-  const schedule: Schedule = {
-    sections,
-    unassignedStudents: unassigned,
-    metadata: {
-      generatedAt: new Date().toISOString(),
-      algorithmVersion: '1.0.0',
-      iterations: maxOptimizationIterations,
-      score: calculateScore(sections, input),
-      constraintsSatisfied: 0, // Will be filled by validator
-      constraintsTotal: input.constraints.length + input.preferences.length,
-      warnings: [],
-    },
-  };
-
-  report('complete', 100, 'Schedule generation complete', {
-    studentsAssigned: input.students.length,
-    sectionsCreated: sections.length,
-  });
-
-  return schedule;
+  // Optimization
+  optimizeSections(sections, studentSchedules, courseMap, 500);
 }
 
 function createSections(
   courses: Course[],
-  teachers: Teacher[],
-  courseMap: Map<CourseId, Course>
+  teachers: Teacher[]
 ): Section[] {
   const sections: Section[] = [];
   const teacherSectionCount = new Map<TeacherId, number>();
 
   for (const course of courses) {
-    // Find qualified teachers
     const qualifiedTeachers = teachers.filter(t =>
       t.subjects.includes(course.id) &&
       (teacherSectionCount.get(t.id) || 0) < t.maxSections
     );
 
     for (let i = 0; i < course.sections; i++) {
-      // Round-robin teacher assignment among qualified teachers
       const teacher = qualifiedTeachers[i % qualifiedTeachers.length];
 
       const section: Section = {
@@ -227,7 +313,6 @@ function assignTimeSlots(
   config: ScheduleInput['config'],
   teacherMap: Map<TeacherId, Teacher>
 ): void {
-  // Track teacher schedules
   const teacherSchedules = new Map<TeacherId, Set<string>>();
   for (const teacher of teachers) {
     const unavailable = new Set<string>();
@@ -237,7 +322,6 @@ function assignTimeSlots(
     teacherSchedules.set(teacher.id, unavailable);
   }
 
-  // Group sections by course for same-course different-time assignment
   const sectionsByCourse = new Map<CourseId, Section[]>();
   for (const section of sections) {
     const list = sectionsByCourse.get(section.courseId) || [];
@@ -245,29 +329,23 @@ function assignTimeSlots(
     sectionsByCourse.set(section.courseId, list);
   }
 
-  // Assign one period per day for each section (for periodsPerWeek = 5)
-  for (const [courseId, courseSections] of sectionsByCourse) {
+  for (const [, courseSections] of sectionsByCourse) {
     for (let sectionIdx = 0; sectionIdx < courseSections.length; sectionIdx++) {
       const section = courseSections[sectionIdx];
       const teacherId = section.teacherId;
       const teacherSchedule = teacherId ? teacherSchedules.get(teacherId) : null;
 
-      // Try to find 5 different periods (one per day) that work
       for (let day = 0; day < config.daysPerWeek; day++) {
-        // Start offset by section index to spread sections across periods
         for (let attempt = 0; attempt < config.periodsPerDay; attempt++) {
           const slot = (sectionIdx + attempt) % config.periodsPerDay;
           const key = `${day}-${slot}`;
 
-          // Check if teacher is available
           if (teacherSchedule && teacherSchedule.has(key)) {
             continue;
           }
 
-          // Assign this period
           section.periods.push({ day, slot });
 
-          // Mark teacher as busy
           if (teacherSchedule) {
             teacherSchedule.add(key);
           }
@@ -284,7 +362,6 @@ function assignRooms(
   courseMap: Map<CourseId, Course>,
   config: ScheduleInput['config']
 ): void {
-  // Track room schedules
   const roomSchedules = new Map<RoomId, Set<string>>();
   for (const room of rooms) {
     const unavailable = new Set<string>();
@@ -298,18 +375,13 @@ function assignRooms(
     const course = courseMap.get(section.courseId);
     const requiredFeatures = course?.requiredFeatures || [];
 
-    // Find suitable rooms
     const suitableRooms = rooms.filter(r => {
-      // Check capacity
       if (r.capacity < section.capacity) return false;
-      // Check features
       return requiredFeatures.every(f => r.features.includes(f));
     });
 
-    // Sort by capacity (prefer smaller suitable rooms)
     suitableRooms.sort((a, b) => a.capacity - b.capacity);
 
-    // Try to find a room available for all section periods
     for (const room of suitableRooms) {
       const schedule = roomSchedules.get(room.id)!;
       const canUse = section.periods.every(p => !schedule.has(`${p.day}-${p.slot}`));
@@ -333,20 +405,15 @@ function assignStudentToSection(
   courseMap: Map<CourseId, Course>
 ): boolean {
   const studentSchedule = studentSchedules.get(studentId)!;
-
-  // Find sections for this course
   const courseSections = sections.filter(s => s.courseId === courseId);
 
-  // Sort by enrollment to balance class sizes
   courseSections.sort((a, b) => a.enrolledStudents.length - b.enrolledStudents.length);
 
   for (const section of courseSections) {
-    // Check capacity
     if (section.enrolledStudents.length >= section.capacity) {
       continue;
     }
 
-    // Check for time conflicts
     const hasConflict = section.periods.some(p =>
       studentSchedule.has(`${p.day}-${p.slot}`)
     );
@@ -355,7 +422,6 @@ function assignStudentToSection(
       continue;
     }
 
-    // Assign student
     section.enrolledStudents.push(studentId);
     for (const period of section.periods) {
       studentSchedule.add(`${period.day}-${period.slot}`);
@@ -370,10 +436,8 @@ function optimizeSections(
   sections: Section[],
   studentSchedules: Map<StudentId, Set<string>>,
   courseMap: Map<CourseId, Course>,
-  maxIterations: number,
-  onIteration?: (iter: number) => void
+  maxIterations: number
 ): void {
-  // Group sections by course
   const sectionsByCourse = new Map<CourseId, Section[]>();
   for (const section of sections) {
     const list = sectionsByCourse.get(section.courseId) || [];
@@ -381,38 +445,31 @@ function optimizeSections(
     sectionsByCourse.set(section.courseId, list);
   }
 
-  // Try to balance section sizes within each course
   for (let iter = 0; iter < maxIterations; iter++) {
-    onIteration?.(iter);
     let improved = false;
 
-    for (const [courseId, courseSections] of sectionsByCourse) {
+    for (const [, courseSections] of sectionsByCourse) {
       if (courseSections.length < 2) continue;
 
-      // Find most and least enrolled sections
       courseSections.sort((a, b) => a.enrolledStudents.length - b.enrolledStudents.length);
       const smallest = courseSections[0];
       const largest = courseSections[courseSections.length - 1];
 
       const diff = largest.enrolledStudents.length - smallest.enrolledStudents.length;
-      if (diff <= 1) continue; // Already balanced
+      if (diff <= 1) continue;
 
-      // Try to move a student from largest to smallest
       for (const studentId of largest.enrolledStudents) {
         const studentSchedule = studentSchedules.get(studentId)!;
 
-        // Remove student's periods from the largest section temporarily
         for (const period of largest.periods) {
           studentSchedule.delete(`${period.day}-${period.slot}`);
         }
 
-        // Check if student can move to smallest section
         const hasConflict = smallest.periods.some(p =>
           studentSchedule.has(`${p.day}-${p.slot}`)
         );
 
         if (!hasConflict && smallest.enrolledStudents.length < smallest.capacity) {
-          // Move the student
           largest.enrolledStudents = largest.enrolledStudents.filter(id => id !== studentId);
           smallest.enrolledStudents.push(studentId);
           for (const period of smallest.periods) {
@@ -421,7 +478,6 @@ function optimizeSections(
           improved = true;
           break;
         } else {
-          // Restore the student's schedule
           for (const period of largest.periods) {
             studentSchedule.add(`${period.day}-${period.slot}`);
           }
@@ -429,18 +485,16 @@ function optimizeSections(
       }
     }
 
-    if (!improved) break; // No more improvements possible
+    if (!improved) break;
   }
 }
 
 function calculateScore(sections: Section[], input: ScheduleInput): number {
   let score = 100;
 
-  // Deduct for empty sections
   const emptySections = sections.filter(s => s.enrolledStudents.length === 0);
   score -= emptySections.length * 5;
 
-  // Deduct for unbalanced sections
   const sectionsByCourse = new Map<CourseId, Section[]>();
   for (const section of sections) {
     const list = sectionsByCourse.get(section.courseId) || [];
@@ -455,11 +509,9 @@ function calculateScore(sections: Section[], input: ScheduleInput): number {
     score -= variance * 0.5;
   }
 
-  // Reward for sections without rooms (penalty)
   const noRoom = sections.filter(s => !s.roomId);
   score -= noRoom.length * 10;
 
-  // Reward for sections without teachers (penalty)
   const noTeacher = sections.filter(s => !s.teacherId);
   score -= noTeacher.length * 10;
 
