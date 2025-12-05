@@ -1,0 +1,29 @@
+{
+  "name": "school-scheduling",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "School scheduling software with constraint-based optimization",
+  "scripts": {
+    "schedule": "tsx src/scripts/schedule.ts",
+    "validate": "tsx src/scripts/validate.ts",
+    "report": "tsx src/scripts/report.ts",
+    "convert": "tsx src/scripts/convert.ts",
+    "demo": "tsx src/scripts/demo.ts"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "cli-progress": "^3.12.0",
+    "commander": "^14.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@commander-js/extra-typings": "^14.0.0",
+    "@types/cli-progress": "^3.11.6",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

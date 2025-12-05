@@ -1,0 +1,70 @@
+{
+  "rooms": [
+    {
+      "id": "r-101",
+      "name": "Room 101",
+      "capacity": 32,
+      "features": []
+    },
+    {
+      "id": "r-102",
+      "name": "Room 102",
+      "capacity": 32,
+      "features": []
+    },
+    {
+      "id": "r-103",
+      "name": "Room 103",
+      "capacity": 30,
+      "features": []
+    },
+    {
+      "id": "r-104",
+      "name": "Room 104",
+      "capacity": 30,
+      "features": []
+    },
+    {
+      "id": "r-105",
+      "name": "Room 105",
+      "capacity": 28,
+      "features": []
+    },
+    {
+      "id": "r-lab1",
+      "name": "Science Lab 1",
+      "capacity": 24,
+      "features": ["lab"]
+    },
+    {
+      "id": "r-lab2",
+      "name": "Science Lab 2",
+      "capacity": 24,
+      "features": ["lab"]
+    },
+    {
+      "id": "r-art",
+      "name": "Art Room",
+      "capacity": 24,
+      "features": ["art-supplies"]
+    },
+    {
+      "id": "r-comp",
+      "name": "Computer Lab",
+      "capacity": 30,
+      "features": ["computers"]
+    },
+    {
+      "id": "r-gym",
+      "name": "Gymnasium",
+      "capacity": 60,
+      "features": ["gym"]
+    },
+    {
+      "id": "r-music",
+      "name": "Music Room",
+      "capacity": 45,
+      "features": ["music-room"]
+    }
+  ]
+}

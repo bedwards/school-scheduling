@@ -1,0 +1,156 @@
+{
+  "courses": [
+    {
+      "id": "math-alg1",
+      "name": "Algebra I",
+      "maxStudents": 30,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [9, 10],
+      "sections": 2
+    },
+    {
+      "id": "math-alg2",
+      "name": "Algebra II",
+      "maxStudents": 30,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [10, 11],
+      "prerequisites": ["math-alg1"],
+      "sections": 2
+    },
+    {
+      "id": "math-precalc",
+      "name": "Pre-Calculus",
+      "maxStudents": 28,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [11, 12],
+      "prerequisites": ["math-alg2"],
+      "sections": 1
+    },
+    {
+      "id": "math-calc",
+      "name": "Calculus",
+      "maxStudents": 25,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [12],
+      "prerequisites": ["math-precalc"],
+      "sections": 1
+    },
+    {
+      "id": "eng-9",
+      "name": "English 9",
+      "maxStudents": 28,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [9],
+      "sections": 2
+    },
+    {
+      "id": "eng-10",
+      "name": "English 10",
+      "maxStudents": 28,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [10],
+      "sections": 2
+    },
+    {
+      "id": "eng-11",
+      "name": "English 11",
+      "maxStudents": 28,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [11],
+      "sections": 1
+    },
+    {
+      "id": "eng-12",
+      "name": "English 12",
+      "maxStudents": 28,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [12],
+      "sections": 1
+    },
+    {
+      "id": "sci-bio",
+      "name": "Biology",
+      "maxStudents": 24,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [9, 10],
+      "requiredFeatures": ["lab"],
+      "sections": 2
+    },
+    {
+      "id": "sci-chem",
+      "name": "Chemistry",
+      "maxStudents": 24,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [10, 11],
+      "prerequisites": ["sci-bio"],
+      "requiredFeatures": ["lab"],
+      "sections": 1
+    },
+    {
+      "id": "sci-phys",
+      "name": "Physics",
+      "maxStudents": 24,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [11, 12],
+      "prerequisites": ["sci-chem", "math-alg2"],
+      "requiredFeatures": ["lab"],
+      "sections": 1
+    },
+    {
+      "id": "hist-world",
+      "name": "World History",
+      "maxStudents": 30,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [9, 10],
+      "sections": 2
+    },
+    {
+      "id": "hist-us",
+      "name": "US History",
+      "maxStudents": 30,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [11],
+      "sections": 1
+    },
+    {
+      "id": "hist-gov",
+      "name": "Government",
+      "maxStudents": 30,
+      "periodsPerWeek": 5,
+      "gradeRestrictions": [12],
+      "sections": 1
+    },
+    {
+      "id": "art-intro",
+      "name": "Introduction to Art",
+      "maxStudents": 20,
+      "periodsPerWeek": 5,
+      "requiredFeatures": ["art-supplies"],
+      "sections": 1
+    },
+    {
+      "id": "cs-intro",
+      "name": "Introduction to Computer Science",
+      "maxStudents": 24,
+      "periodsPerWeek": 5,
+      "requiredFeatures": ["computers"],
+      "sections": 1
+    },
+    {
+      "id": "pe",
+      "name": "Physical Education",
+      "maxStudents": 35,
+      "periodsPerWeek": 5,
+      "requiredFeatures": ["gym"],
+      "sections": 2
+    },
+    {
+      "id": "music-band",
+      "name": "Band",
+      "maxStudents": 40,
+      "periodsPerWeek": 5,
+      "requiredFeatures": ["music-room"],
+      "sections": 1
+    }
+  ]
+}

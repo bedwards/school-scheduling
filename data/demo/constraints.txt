@@ -1,0 +1,45 @@
+# School Scheduling Constraints and Goals
+# This file defines the constraints and optimization goals for schedule generation
+# Lines starting with # are comments
+# Format: TYPE: CONSTRAINT_NAME | description | parameters
+
+# =============================================================================
+# HARD CONSTRAINTS (Must be satisfied - schedule is invalid otherwise)
+# =============================================================================
+
+HARD: NO_TEACHER_CONFLICT | A teacher cannot teach two sections at the same time
+HARD: NO_STUDENT_CONFLICT | A student cannot be in two classes at the same time
+HARD: NO_ROOM_CONFLICT | A room cannot host two sections at the same time
+HARD: ROOM_CAPACITY | Section enrollment cannot exceed room capacity
+HARD: TEACHER_QUALIFIED | Teachers can only teach subjects they are qualified for
+HARD: TEACHER_AVAILABILITY | Teachers cannot be scheduled during unavailable periods
+HARD: ROOM_FEATURES | Courses requiring specific features must be in appropriate rooms
+HARD: GRADE_RESTRICTION | Students can only take courses for their grade level (when specified)
+HARD: TEACHER_MAX_SECTIONS | Teachers cannot exceed their maximum section count
+
+# =============================================================================
+# SOFT CONSTRAINTS (Should be optimized - weighted by importance 0.0-1.0)
+# =============================================================================
+
+SOFT: BALANCED_SECTIONS | Sections of the same course should have similar enrollment | weight=0.7
+SOFT: STUDENT_ELECTIVE_PREFERENCE | Students should get their top elective choices | weight=0.8
+SOFT: MINIMIZE_GAPS | Students should have minimal gaps in their daily schedules | weight=0.5
+SOFT: TEACHER_PREFERENCES | Honor teacher period preferences when possible | weight=0.4
+SOFT: LUNCH_AVAILABILITY | All students should have period 4 or 5 available for lunch | weight=0.9
+
+# =============================================================================
+# SCHEDULE CONFIGURATION
+# =============================================================================
+
+CONFIG: PERIODS_PER_DAY = 8
+CONFIG: DAYS_PER_WEEK = 5
+CONFIG: LUNCH_PERIODS = 4,5
+
+# =============================================================================
+# GOALS (High-level objectives for the scheduling algorithm)
+# =============================================================================
+
+GOAL: All students must be enrolled in all their required courses
+GOAL: Maximize the number of students receiving their first-choice elective
+GOAL: All sections should have at least 5 students enrolled
+GOAL: Teacher workload should be distributed as evenly as possible

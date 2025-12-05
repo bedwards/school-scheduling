@@ -1,0 +1,80 @@
+{
+  "teachers": [
+    {
+      "id": "t-johnson",
+      "name": "Ms. Johnson",
+      "subjects": ["math-alg1", "math-alg2", "math-precalc"],
+      "maxSections": 5
+    },
+    {
+      "id": "t-smith",
+      "name": "Mr. Smith",
+      "subjects": ["math-alg1", "math-alg2", "math-calc"],
+      "maxSections": 5
+    },
+    {
+      "id": "t-williams",
+      "name": "Mrs. Williams",
+      "subjects": ["eng-9", "eng-10", "eng-11", "eng-12"],
+      "maxSections": 5
+    },
+    {
+      "id": "t-brown",
+      "name": "Mr. Brown",
+      "subjects": ["eng-9", "eng-10"],
+      "maxSections": 4,
+      "unavailable": [
+        { "day": 0, "slot": 0 },
+        { "day": 0, "slot": 1 }
+      ]
+    },
+    {
+      "id": "t-davis",
+      "name": "Dr. Davis",
+      "subjects": ["sci-bio", "sci-chem", "sci-phys"],
+      "maxSections": 5
+    },
+    {
+      "id": "t-miller",
+      "name": "Ms. Miller",
+      "subjects": ["sci-bio", "sci-chem"],
+      "maxSections": 4
+    },
+    {
+      "id": "t-wilson",
+      "name": "Mr. Wilson",
+      "subjects": ["hist-world", "hist-us", "hist-gov"],
+      "maxSections": 5
+    },
+    {
+      "id": "t-moore",
+      "name": "Mrs. Moore",
+      "subjects": ["hist-world"],
+      "maxSections": 3
+    },
+    {
+      "id": "t-taylor",
+      "name": "Ms. Taylor",
+      "subjects": ["art-intro"],
+      "maxSections": 3
+    },
+    {
+      "id": "t-anderson",
+      "name": "Mr. Anderson",
+      "subjects": ["cs-intro"],
+      "maxSections": 4
+    },
+    {
+      "id": "t-thomas",
+      "name": "Coach Thomas",
+      "subjects": ["pe"],
+      "maxSections": 4
+    },
+    {
+      "id": "t-jackson",
+      "name": "Mr. Jackson",
+      "subjects": ["music-band"],
+      "maxSections": 2
+    }
+  ]
+}
