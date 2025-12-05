@@ -66,7 +66,7 @@ export async function generateSchedule(
   report('assigning', 10, 'Assigning time slots to sections');
 
   // Phase 2: Assign time slots to sections
-  assignTimeSlots(sections, input.teachers, input.config, teacherMap);
+  assignTimeSlots(sections, input.teachers, input.config, teacherMap, courseMap);
 
   report('assigning', 20, 'Assigning rooms to sections');
 
@@ -97,7 +97,12 @@ export async function generateSchedule(
         report('optimizing', 85, `ILP solved (${ilpResult.status}), applying assignments...`);
 
         // Apply ILP assignments to sections
-        applyILPAssignments(sections, ilpResult.assignments, input.students, courseMap, unassigned);
+        const studentSchedules = applyILPAssignments(sections, ilpResult.assignments, input.students, courseMap, unassigned);
+
+        report('optimizing', 88, 'Balancing section sizes...');
+
+        // Post-ILP optimization: balance section sizes
+        optimizeSections(sections, studentSchedules, courseMap, 500);
 
         report('optimizing', 90, `ILP complete: objective=${ilpResult.objectiveValue.toFixed(1)}, time=${ilpResult.solveTimeMs}ms`);
       } else {
@@ -151,19 +156,29 @@ function applyILPAssignments(
   students: { id: StudentId; requiredCourses: CourseId[] }[],
   courseMap: Map<CourseId, Course>,
   unassigned: UnassignedStudent[]
-): void {
+): Map<StudentId, Set<string>> {
   // Build section lookup
   const sectionMap = new Map(sections.map(s => [s.id, s]));
 
+  // Track student schedules for post-optimization
+  const studentSchedules = new Map<StudentId, Set<string>>();
+
   for (const student of students) {
     const studentSections = assignments.get(student.id) || [];
+    const schedule = new Set<string>();
 
     for (const sectionId of studentSections) {
       const section = sectionMap.get(sectionId);
       if (section && !section.enrolledStudents.includes(student.id)) {
         section.enrolledStudents.push(student.id);
+        // Track time slots
+        for (const period of section.periods) {
+          schedule.add(`${period.day}-${period.slot}`);
+        }
       }
     }
+
+    studentSchedules.set(student.id, schedule);
 
     // Check for missing required courses
     const assignedCourses = new Set(studentSections.map(sid => {
@@ -190,6 +205,8 @@ function applyILPAssignments(
       }
     }
   }
+
+  return studentSchedules;
 }
 
 async function runGreedyAssignment(
@@ -311,7 +328,8 @@ function assignTimeSlots(
   sections: Section[],
   teachers: Teacher[],
   config: ScheduleInput['config'],
-  teacherMap: Map<TeacherId, Teacher>
+  teacherMap: Map<TeacherId, Teacher>,
+  courseMap: Map<CourseId, Course>
 ): void {
   const teacherSchedules = new Map<TeacherId, Set<string>>();
   for (const teacher of teachers) {
@@ -322,6 +340,17 @@ function assignTimeSlots(
     teacherSchedules.set(teacher.id, unavailable);
   }
 
+  // Track how many sections use each time slot (for load balancing)
+  const slotUsage = new Map<number, number>();
+  for (let slot = 0; slot < config.periodsPerDay; slot++) {
+    slotUsage.set(slot, 0);
+  }
+
+  // Track which slots are used by courses with specific grade restrictions
+  // Key: grade number, Value: Map of slot -> course count at that slot
+  const gradeSlotUsage = new Map<number, Map<number, number>>();
+
+  // Group sections by course for spreading
   const sectionsByCourse = new Map<CourseId, Section[]>();
   for (const section of sections) {
     const list = sectionsByCourse.get(section.courseId) || [];
@@ -329,27 +358,73 @@ function assignTimeSlots(
     sectionsByCourse.set(section.courseId, list);
   }
 
-  for (const [, courseSections] of sectionsByCourse) {
+  // Assign sections, spreading same-course sections across DIFFERENT time slots
+  // Also avoid putting courses for the same grade at the same time slot
+  for (const [courseId, courseSections] of sectionsByCourse) {
+    const course = courseMap.get(courseId);
+    const grades = course?.gradeRestrictions || [];
+
+    // Track which slots this course has used (sections of same course should differ)
+    const courseUsedSlots = new Set<number>();
+
     for (let sectionIdx = 0; sectionIdx < courseSections.length; sectionIdx++) {
       const section = courseSections[sectionIdx];
       const teacherId = section.teacherId;
       const teacherSchedule = teacherId ? teacherSchedules.get(teacherId) : null;
 
+      // Find the least-used slot that this course hasn't used yet (if possible)
+      const availableSlots: { slot: number; usage: number }[] = [];
+      for (let slot = 0; slot < config.periodsPerDay; slot++) {
+        // Check if teacher is available for this slot on ALL days
+        const teacherAvailable = !teacherSchedule ||
+          ![...Array(config.daysPerWeek).keys()].some(day =>
+            teacherSchedule.has(`${day}-${slot}`)
+          );
+
+        if (teacherAvailable) {
+          let penalty = slotUsage.get(slot)!;
+
+          // Penalize reusing same slot for same course
+          if (courseUsedSlots.has(slot)) {
+            penalty += 1000;
+          }
+
+          // Penalize slots already used by other courses for the same grade
+          // This prevents Gov and Eng12 from both being at slot 3
+          for (const grade of grades) {
+            const gradeSlots = gradeSlotUsage.get(grade);
+            if (gradeSlots) {
+              const gradeUsage = gradeSlots.get(slot) || 0;
+              penalty += gradeUsage * 500; // Heavy penalty for same-grade conflicts
+            }
+          }
+
+          availableSlots.push({ slot, usage: penalty });
+        }
+      }
+
+      // Sort by usage (prefer less-used slots)
+      availableSlots.sort((a, b) => a.usage - b.usage);
+
+      const chosenSlot = availableSlots[0]?.slot ?? 0;
+      courseUsedSlots.add(chosenSlot);
+      slotUsage.set(chosenSlot, (slotUsage.get(chosenSlot) || 0) + 1);
+
+      // Track grade-slot usage
+      for (const grade of grades) {
+        if (!gradeSlotUsage.has(grade)) {
+          gradeSlotUsage.set(grade, new Map());
+        }
+        const gradeSlots = gradeSlotUsage.get(grade)!;
+        gradeSlots.set(chosenSlot, (gradeSlots.get(chosenSlot) || 0) + 1);
+      }
+
+      // Assign this section to the chosen slot for all days
       for (let day = 0; day < config.daysPerWeek; day++) {
-        for (let attempt = 0; attempt < config.periodsPerDay; attempt++) {
-          const slot = (sectionIdx + attempt) % config.periodsPerDay;
-          const key = `${day}-${slot}`;
-
-          if (teacherSchedule && teacherSchedule.has(key)) {
-            continue;
-          }
-
-          section.periods.push({ day, slot });
-
-          if (teacherSchedule) {
-            teacherSchedule.add(key);
-          }
-          break;
+        const key = `${day}-${chosenSlot}`;
+        section.periods.push({ day, slot: chosenSlot });
+        if (teacherSchedule) {
+          teacherSchedule.add(key);
         }
       }
     }
