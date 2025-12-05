@@ -1,0 +1,35 @@
+{
+  "name": "school-scheduler-web",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "vite build && wrangler deploy --dry-run",
+    "deploy": "vite build && wrangler deploy",
+    "db:generate": "wrangler d1 migrations create school-scheduler-db",
+    "db:migrate:local": "wrangler d1 migrations apply school-scheduler-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply school-scheduler-db --remote",
+    "db:studio": "wrangler d1 execute school-scheduler-db --local --command \"SELECT 1\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "jose": "^5.9.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-router-dom": "^7.0.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "wrangler": "^3.95.0"
+  }
+}

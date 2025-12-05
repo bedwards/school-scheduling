@@ -1,0 +1,35 @@
+# Cloudflare Workers configuration for School Scheduler
+# See: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "school-scheduler"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Static assets (React frontend)
+[assets]
+directory = "./dist"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "school-scheduler-db"
+database_id = "placeholder-will-be-replaced-after-creation"
+
+# Environment variables (non-secret, safe to commit)
+[vars]
+ENVIRONMENT = "production"
+
+# Development environment
+[env.dev]
+name = "school-scheduler-dev"
+
+[env.dev.vars]
+ENVIRONMENT = "development"
+
+# NOTE: Secrets are configured via `wrangler secret put`:
+# - JWT_SECRET: Secret key for signing JWTs
+# - ADMIN_PASSWORD_HASH: Bcrypt hash of admin password
+#
+# NEVER commit secrets to git!
+# Use `wrangler secret put JWT_SECRET` to set secrets

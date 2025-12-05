@@ -129,13 +129,36 @@ school-scheduling/
 | [chalk](https://www.npmjs.com/package/chalk) | Terminal colors |
 | [cli-progress](https://www.npmjs.com/package/cli-progress) | Progress bars |
 
-## Performance
+## The Problem This Solves
 
-| Dataset | Sections | Solve Time |
-|---------|----------|------------|
-| Demo (50 students) | 25 | ~70ms |
-| Medium (200 students) | 50 | ~200ms |
-| Large (500 students) | 100 | ~500ms |
+**Manual scheduling is a nightmare.** A typical high school administrator faces:
+
+- **500 students** each needing 6-7 classes per day
+- **40 teachers** with varying subject qualifications and availability
+- **30 rooms** with different capacities and features (labs, computers)
+- **80 courses** across multiple sections
+- **Constraints that conflict**: "All seniors need Government, but also English 12, but Ms. Wilson teaches both and there's only one period where Room 104 is free..."
+
+**The math is brutal:**
+- 500 students × 7 periods = 3,500 individual class assignments
+- Each assignment must satisfy 10+ constraints simultaneously
+- One wrong choice cascades: moving Student A affects Section B's balance, which conflicts with Teacher C's schedule...
+
+**Manual approaches take weeks** of spreadsheet wrestling, often resulting in:
+- Students who can't get required courses (conflicts)
+- Unbalanced sections (one section has 35 students, another has 8)
+- Teachers with impossible schedules
+- Repeated "let's try again" cycles
+
+**This system solves it in under a second:**
+
+| School Size | Students | Teachers | Courses | Assignments | Solve Time |
+|-------------|----------|----------|---------|-------------|------------|
+| Small | 50 | 12 | 18 | 305 | ~70ms |
+| Medium | 200 | 25 | 40 | 1,400 | ~200ms |
+| Large | 500 | 40 | 80 | 3,500 | ~500ms |
+
+The algorithm handles all constraints simultaneously, finds optimal section balancing, and produces a valid schedule that would take humans weeks to create manually.
 
 ## Claude Code Workflow
 
