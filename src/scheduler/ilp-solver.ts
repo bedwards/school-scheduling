@@ -11,13 +11,17 @@
  *   x[s][k] = 1 if student s is assigned to section k, 0 otherwise
  *
  * Hard Constraints:
- *   1. Each student in exactly one section of each required course
- *   2. Section capacity not exceeded
- *   3. No time conflicts (student can't be in overlapping sections)
- *   4. Grade restrictions enforced
+ *   1. Section capacity not exceeded
+ *   2. No time conflicts (student can't be in overlapping sections)
+ *   3. Grade restrictions enforced
+ *   4. At most one section per course per student
+ *
+ * Soft Constraints (via objective weights):
+ *   - Required courses: weight=1000 (strongly prefer assignment)
+ *   - Elective preferences: weight=10-1 (ranked by preference order)
  *
  * Objective:
- *   Maximize: sum of (elective preference scores) + section balance bonus
+ *   Maximize: sum of (required course bonuses) + (elective preference scores)
  *
  * Complexity: O(S * K) variables, O(S * C + K + S * T) constraints
  *   where S=students, K=sections, C=courses, T=time slots
@@ -135,9 +139,14 @@ export async function solveScheduleILP(
       }
 
       // Calculate preference weight
-      let weight = 1; // Base weight for required courses
+      let weight = 0;
 
-      // Higher weight for elective preferences
+      // High weight for required courses (soft constraint via objective)
+      if (student.requiredCourses.includes(section.courseId)) {
+        weight = 1000; // Strong incentive to assign required courses
+      }
+
+      // Medium weight for elective preferences
       const electiveRank = student.electivePreferences.indexOf(section.courseId);
       if (electiveRank !== -1) {
         weight = 10 - electiveRank; // First choice = 10, second = 9, etc.
@@ -156,7 +165,7 @@ export async function solveScheduleILP(
 
   let constraintCount = 0;
 
-  // Constraint 1: Each student in exactly one section of each required course
+  // Constraint 1: At most one section per required course (assignment incentivized via objective)
   for (let s = 0; s < numStudents; s++) {
     const student = students[s];
 
@@ -177,12 +186,12 @@ export async function solveScheduleILP(
       if (validSections.length === 0) continue;
 
       const terms = validSections.map(sec => varName(s, sec.index)).join(' + ');
-      lines.push(` req_${s}_${courseId.replace(/[^a-zA-Z0-9]/g, '_')}: ${terms} = 1`);
+      lines.push(` req_${s}_${courseId.replace(/[^a-zA-Z0-9]/g, '_')}: ${terms} <= 1`);
       constraintCount++;
     }
   }
 
-  // Constraint 2: Electives - at most one section per elective course
+  // Constraint 2: At most one section per elective course
   for (let s = 0; s < numStudents; s++) {
     const student = students[s];
 
